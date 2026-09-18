@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -26,6 +26,18 @@ def create_product(
     product: ProductCreate,
     db: Session = Depends(get_db),
 ):
+    existing_product = (
+        db.query(Product)
+        .filter(Product.sku == product.sku)
+        .first()
+    )
+
+    if existing_product:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Product with SKU '{product.sku}' already exists",
+        )
+
     db_product = Product(
         sku=product.sku,
         name=product.name,
