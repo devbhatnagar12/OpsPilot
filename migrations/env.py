@@ -17,7 +17,7 @@ if config.config_file_name is not None:
 # add your model's MetaData object here
 # for 'autogenerate' support
 from apps.api.app.database import Base
-from apps.api.app.models import Product
+from apps.api.app.models import Product, Inventory
 
 target_metadata = Base.metadata
 
