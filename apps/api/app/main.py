@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from .routers.products import router as products_router
+from .routers.inventory_risk import router as inventory_risk_router
 
 
 app = FastAPI(
@@ -16,3 +17,4 @@ def health_check():
 
 
 app.include_router(products_router)
+app.include_router(inventory_risk_router)
