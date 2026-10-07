@@ -35,3 +35,30 @@ def get_inventory_risk_by_sku(
         "risk_level": risk.risk_level,
         "explanation": risk.explanation,
     }
+
+def get_high_risk_inventory(db: Session):
+    inventory_items = db.query(Inventory).all()
+
+    high_risk_items = []
+
+    for inventory in inventory_items:
+        risk = calculate_inventory_risk(inventory)
+
+        if risk.risk_level == "HIGH":
+            high_risk_items.append(
+                {
+                    "sku": risk.sku,
+                    "product_name": risk.product_name,
+                    "current_stock": risk.current_stock,
+                    "daily_demand": risk.daily_demand,
+                    "reorder_point": risk.reorder_point,
+                    "days_of_stock": risk.days_of_stock,
+                    "risk_level": risk.risk_level,
+                    "explanation": risk.explanation,
+                }
+            )
+
+    return {
+        "count": len(high_risk_items),
+        "items": high_risk_items,
+    }

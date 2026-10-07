@@ -2,6 +2,10 @@ from ollama import chat
 
 from apps.api.app.database import SessionLocal
 from tools.inventory_tools import get_inventory_risk_by_sku
+from tools.inventory_tools import (
+    get_high_risk_inventory,
+    get_inventory_risk_by_sku,
+)
 
 
 SYSTEM_PROMPT = """
@@ -52,6 +56,20 @@ INVENTORY_RISK_TOOL = {
     },
 }
 
+HIGH_RISK_INVENTORY_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "get_high_risk_inventory",
+        "description": (
+            "Get all products currently classified as HIGH inventory risk."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+}
+
 
 def investigate_inventory_risk(user_question: str) -> str:
     messages = [
@@ -68,7 +86,7 @@ def investigate_inventory_risk(user_question: str) -> str:
     response = chat(
         model="llama3.2:3b",
         messages=messages,
-        tools=[INVENTORY_RISK_TOOL],
+        tools=[INVENTORY_RISK_TOOL, HIGH_RISK_INVENTORY_TOOL],
     )
 
     tool_calls = response["message"].get("tool_calls", [])
@@ -82,13 +100,18 @@ def investigate_inventory_risk(user_question: str) -> str:
 
     try:
         for tool_call in tool_calls:
-            if tool_call["function"]["name"] != "get_inventory_risk_by_sku":
-                continue
-
+            tool_name = tool_call["function"]["name"]
             arguments = tool_call["function"]["arguments"]
-            sku = arguments["sku"]
 
-            tool_result = get_inventory_risk_by_sku(db, sku)
+            if tool_name == "get_inventory_risk_by_sku":
+                sku = arguments["sku"]
+                tool_result = get_inventory_risk_by_sku(db, sku)
+
+            elif tool_name == "get_high_risk_inventory":
+                tool_result = get_high_risk_inventory(db)
+
+            else:
+                continue
 
             messages.append(
                 {
@@ -96,6 +119,8 @@ def investigate_inventory_risk(user_question: str) -> str:
                     "content": str(tool_result),
                 }
             )
+
+  
     finally:
         db.close()
 
