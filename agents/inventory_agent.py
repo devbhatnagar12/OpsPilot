@@ -7,49 +7,101 @@ from tools.inventory_tools import get_inventory_risk_by_sku
 SYSTEM_PROMPT = """
 You are OpsPilot, an AI operations assistant for a manufacturing company.
 
-You help operations teams investigate inventory risks.
+Your job is to investigate operational questions using the available tools.
 
-When a user asks about a specific SKU, use the inventory risk tool
-to retrieve the actual operational data before answering.
+GROUNDING RULES:
+- Tool results are the authoritative source of operational facts.
+- Never invent numbers, thresholds, policies, recommendations, trends, or business rules.
+- Only state a number if that number appears in the tool result.
+- Never describe a value as "recommended", "optimal", "target", or "required"
+  unless the tool result explicitly says so.
+- Do not introduce external inventory-management rules.
+- You may interpret the evidence, but clearly distinguish interpretation
+  from factual data.
+- If the available evidence is insufficient to answer something, say so.
 
-Do not invent inventory numbers.
+For inventory-risk questions:
+- Report the risk level returned by the tool.
+- Report relevant stock, demand, reorder point, and days-of-stock values
+  exactly as supported by the tool.
+- Explain why the tool classified the inventory at that risk level.
+- Do not create additional risk thresholds.
 
-After receiving tool data, explain:
-1. What the current risk is
-2. Why the SKU is at risk
-3. What evidence supports the conclusion
-
-Keep the response concise and operational.
+Keep the final answer concise and useful to an operations team.
 """
 
 
-def investigate_inventory_risk(sku: str) -> str:
+INVENTORY_RISK_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "get_inventory_risk_by_sku",
+        "description": (
+            "Get current inventory risk and operational evidence for a "
+            "specific product SKU."
+        ),
+        "parameters": {
+            "type": "object",
+            "required": ["sku"],
+            "properties": {
+                "sku": {
+                    "type": "string",
+                    "description": "The product SKU to investigate.",
+                }
+            },
+        },
+    },
+}
+
+
+def investigate_inventory_risk(user_question: str) -> str:
+    messages = [
+        {
+            "role": "system",
+            "content": SYSTEM_PROMPT,
+        },
+        {
+            "role": "user",
+            "content": user_question,
+        },
+    ]
+
+    response = chat(
+        model="llama3.2:3b",
+        messages=messages,
+        tools=[INVENTORY_RISK_TOOL],
+    )
+
+    tool_calls = response["message"].get("tool_calls", [])
+
+    if not tool_calls:
+        return response["message"]["content"]
+
+    messages.append(response["message"])
+
     db = SessionLocal()
 
     try:
-        inventory_data = get_inventory_risk_by_sku(db, sku)
+        for tool_call in tool_calls:
+            if tool_call["function"]["name"] != "get_inventory_risk_by_sku":
+                continue
 
-        if not inventory_data["found"]:
-            return inventory_data["message"]
+            arguments = tool_call["function"]["arguments"]
+            sku = arguments["sku"]
 
-        response = chat(
-            model="llama3.2:3b",
-            messages=[
+            tool_result = get_inventory_risk_by_sku(db, sku)
+
+            messages.append(
                 {
-                    "role": "system",
-                    "content": SYSTEM_PROMPT,
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"Investigate inventory risk for SKU {sku}.\n\n"
-                        f"Operational evidence:\n{inventory_data}"
-                    ),
-                },
-            ],
-        )
-
-        return response["message"]["content"]
-
+                    "role": "tool",
+                    "content": str(tool_result),
+                }
+            )
     finally:
         db.close()
+
+    final_response = chat(
+        model="llama3.2:3b",
+        messages=messages,
+    )
+
+    return final_response["message"]["content"]
